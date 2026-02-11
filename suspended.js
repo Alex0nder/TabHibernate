@@ -1,6 +1,6 @@
 /**
  * Страница-заглушка после режима Placeholder: показывает URL и кнопку «Восстановить».
- * Восстановление = переход на исходный URL; данные берутся из storage по tabId из query.
+ * Читает данные из chrome.storage.local напрямую — не зависит от Service Worker (работает даже если SW спит).
  */
 
 const params = new URLSearchParams(window.location.search);
@@ -10,23 +10,45 @@ const tabId = tabIdParam ? parseInt(tabIdParam, 10) : null;
 const urlEl = document.getElementById('url');
 const btn = document.getElementById('reload');
 
-if (!tabId) {
-  urlEl.textContent = 'Неизвестная вкладка';
+function showError(msg) {
+  urlEl.textContent = msg;
+  if (btn) btn.disabled = true;
+}
+
+function restore(url) {
   btn.disabled = true;
+  const key = `suspended_${tabId}`;
+  chrome.storage.local.remove(key);
+  chrome.tabs.update(tabId, { url }).then(() => {
+    window.close();
+  }).catch((e) => {
+    console.warn('[TabHibernate] restore failed', e);
+    btn.disabled = false;
+  });
+}
+
+if (!tabId) {
+  showError('Неизвестная вкладка');
 } else {
-  chrome.runtime.sendMessage({ type: 'getRestoreData', tabId }, (data) => {
-    if (data && data.url) {
-      urlEl.textContent = data.url;
-      urlEl.title = data.url;
-      btn.onclick = () => {
-        btn.disabled = true;
-        chrome.runtime.sendMessage({ type: 'clearRestoreData', tabId });
-        chrome.tabs.update(tabId, { url: data.url });
-        window.close();
-      };
+  const key = `suspended_${tabId}`;
+  chrome.storage.local.get(key, (data) => {
+    if (chrome.runtime.lastError) {
+      showError('Ошибка доступа к данным');
+      return;
+    }
+    const item = data[key];
+    if (item && item.url) {
+      urlEl.innerHTML = '';
+      const link = document.createElement('a');
+      link.href = item.url;
+      link.textContent = item.url;
+      link.title = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      urlEl.appendChild(link);
+      if (btn) btn.onclick = () => restore(item.url);
     } else {
-      urlEl.textContent = 'Данные восстановления недоступны';
-      btn.disabled = true;
+      showError('Данные восстановления недоступны');
     }
   });
 }

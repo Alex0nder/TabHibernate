@@ -1,18 +1,103 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <title>Tab Hibernate</title>
+  <link rel="stylesheet" href="theme.css">
   <style>
-    body { width: 280px; padding: 12px; font-family: system-ui, sans-serif; font-size: 13px; margin: 0; }
-    h2 { margin: 0 0 12px; font-size: 16px; }
-    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    label { cursor: pointer; }
-    select { padding: 4px 8px; }
-    button { padding: 8px 14px; cursor: pointer; background: #1a73e8; color: #fff; border: none; border-radius: 6px; font-size: 13px; }
-    button:hover { background: #1557b0; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .stats { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; color: #666; }
+    body {
+      width: 300px;
+      padding: 16px;
+      margin: 0;
+      font-family: 'SF Pro Text', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: var(--th-bg-base);
+      color: var(--th-text-primary);
+    }
+    h2 {
+      margin: 0 0 16px;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--th-text-primary);
+      letter-spacing: -0.02em;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 12px;
+    }
+    label {
+      cursor: pointer;
+      color: var(--th-text-secondary);
+    }
+    select {
+      padding: 6px 10px;
+      background: var(--th-bg-input);
+      border: 1px solid var(--th-border);
+      border-radius: var(--th-radius);
+      color: var(--th-text-primary);
+      font-size: 13px;
+      min-width: 80px;
+    }
+    select:focus {
+      outline: none;
+      border-color: var(--th-accent-cyan);
+    }
+    option {
+      background: var(--th-bg-elevated);
+      color: var(--th-text-primary);
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--th-accent-cyan);
+      cursor: pointer;
+    }
+    button {
+      padding: 10px 16px;
+      background: var(--th-btn-primary-bg);
+      color: var(--th-btn-primary-text);
+      border: none;
+      border-radius: var(--th-radius);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+    button:hover {
+      background: var(--th-btn-primary-hover);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button.btn-secondary {
+      background: var(--th-bg-elevated);
+      color: var(--th-accent-cyan);
+      border: 1px solid var(--th-border);
+    }
+    button.btn-secondary:hover {
+      background: var(--th-bg-card);
+      border-color: var(--th-accent-cyan);
+    }
+    .stats {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--th-text-muted);
+    }
+    .stats:first-of-type {
+      padding-top: 14px;
+      border-top: 1px solid var(--th-border);
+    }
+    .hint {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--th-text-muted);
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -39,7 +124,12 @@
   <div class="row">
     <button id="backup">Бэкап вкладок сейчас</button>
   </div>
+  <div class="row">
+    <button id="suspendAll" class="btn-secondary">Приостановить все вкладки</button>
+  </div>
   <div class="stats" id="stats">Приостановлено сегодня: —</div>
+  <div class="stats" id="statusLine">—</div>
+  <div class="hint" id="hint">Приостанавливаются только фоновые вкладки (не активная, не закреплённая).</div>
   <script src="popup.js"></script>
 </body>
 </html>

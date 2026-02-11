@@ -10,8 +10,10 @@ const INACTIVITY_MINUTES = 5;
 const SUSPENDED_PAGE_PATH = '/suspended.html';
 
 // ——— Хранение последней активности по tabId (в памяти + синхронизация при сообщениях)
-// При перезапуске SW восстанавливаем из storage только при первом запросе активности.
+// После сна SW память пуста — восстанавливаем из storage в начале onAlarmCheck.
 let lastActivityByTab = new Map();
+let lastPersistTime = 0;
+const PERSIST_THROTTLE_MS = 4000;
 
 async function getStoredState() {
   const raw = await chrome.storage.local.get(['lastActivityByTab', 'settings', 'suspendedToday', 'suspendedTodayDate']);
@@ -22,8 +24,15 @@ async function getStoredState() {
 }
 
 async function persistLastActivity() {
-  const obj = Object.fromEntries(lastActivityByTab);
-  await chrome.storage.local.set({ lastActivityByTab: obj });
+  const now = Date.now();
+  if (now - lastPersistTime < PERSIST_THROTTLE_MS) return;
+  lastPersistTime = now;
+  try {
+    const obj = Object.fromEntries(lastActivityByTab);
+    await chrome.storage.local.set({ lastActivityByTab: obj });
+  } catch (e) {
+    console.warn('[TabHibernate] persistLastActivity failed', e);
+  }
 }
 
 function getExtensionOrigin() {
@@ -88,6 +97,11 @@ function isTabInactive(tabId, timeoutMinutes) {
 /** Режим Discard: сбрасываем таб через Chrome API. */
 async function suspendDiscard(tabId) {
   try {
+    await chrome.tabs.get(tabId);
+  } catch (e) {
+    return false;
+  }
+  try {
     await chrome.tabs.discard(tabId);
     await incrementSuspendedToday();
     return true;
@@ -99,6 +113,11 @@ async function suspendDiscard(tabId) {
 
 /** Режим Placeholder: сохраняем url+title, редирект на suspended.html; страница сама восстановит по кнопке. */
 async function suspendPlaceholder(tabId, url, title) {
+  try {
+    await chrome.tabs.get(tabId);
+  } catch (e) {
+    return false;
+  }
   const origin = getExtensionOrigin();
   const restoreKey = `suspended_${tabId}`;
   await chrome.storage.local.set({
@@ -192,8 +211,89 @@ async function runBackup(source = 'manual') {
   return { count: unique.length, folderId };
 }
 
+/** Удаляем из lastActivityByTab записи по закрытым вкладкам, чтобы не раздувать storage. */
+async function pruneStaleTabIds() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const ids = new Set(tabs.map((t) => t.id));
+    let changed = false;
+    for (const id of lastActivityByTab.keys()) {
+      if (!ids.has(id)) {
+        lastActivityByTab.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) await chrome.storage.local.set({ lastActivityByTab: Object.fromEntries(lastActivityByTab) });
+  } catch (e) {
+    console.warn('[TabHibernate] pruneStaleTabIds failed', e);
+  }
+}
+
+/** Ручная приостановка всех подходящих вкладок (без учёта таймаута неактивности). */
+async function runSuspendAllNow() {
+  await getStoredState();
+  const settings = await getSettings();
+  const tabs = await chrome.tabs.query({});
+  const toBackup = [];
+  let suspended = 0;
+  for (const tab of tabs) {
+    if (!(await isTabEligibleForSuspend(tab))) continue;
+    if (settings.mode === 'discard') {
+      const ok = await suspendDiscard(tab.id);
+      if (ok) {
+        toBackup.push({ url: tab.url, title: tab.title });
+        suspended++;
+      }
+    } else {
+      const ok = await suspendPlaceholder(tab.id, tab.url, tab.title);
+      if (ok) {
+        toBackup.push({ url: tab.url, title: tab.title });
+        suspended++;
+      }
+    }
+  }
+  if (toBackup.length > 0) {
+    const seen = new Set();
+    const unique = toBackup.filter((t) => {
+      if (seen.has(t.url)) return false;
+      seen.add(t.url);
+      return true;
+    });
+    const folderId = await getOrCreateBackupFolder();
+    for (const t of unique) {
+      try {
+        await chrome.bookmarks.create({
+          parentId: folderId,
+          title: (t.title || t.url).slice(0, 255),
+          url: t.url,
+        });
+      } catch (e) {
+        console.warn('[TabHibernate] backup bookmark failed', e);
+      }
+    }
+    const backupKey = `backup_${new Date().toISOString().slice(0, 10)}`;
+    const existing = await chrome.storage.local.get(backupKey);
+    const list = existing[backupKey] || [];
+    const existingUrls = new Set(list.map((x) => x.url));
+    for (const t of unique) {
+      if (!existingUrls.has(t.url)) {
+        list.push({ url: t.url, title: t.title || t.url, ts: Date.now() });
+        existingUrls.add(t.url);
+      }
+    }
+    await chrome.storage.local.set({ [backupKey]: list });
+  }
+  return { suspended };
+}
+
 /** Основная проверка по будильнику: суспенд неактивных и при необходимости бэкап. */
 async function onAlarmCheck() {
+  await chrome.storage.local.set({ lastAlarmRun: Date.now() });
+  await ensureAlarm();
+
+  await getStoredState();
+  await pruneStaleTabIds();
+
   const settings = await getSettings();
   if (!settings.enabled) return;
 
@@ -245,7 +345,7 @@ async function onAlarmCheck() {
   }
 }
 
-/** При установке/старте создаём alarm и выставляем начальную активность для открытых табов. */
+/** Создаём/обновляем периодический alarm — вызывать при старте и после каждой проверки. */
 async function ensureAlarm() {
   try {
     await chrome.alarms.create(ALARM_CHECK_NAME, { periodInMinutes: ALARM_CHECK_PERIOD_MINUTES });
@@ -255,6 +355,7 @@ async function ensureAlarm() {
 }
 
 async function initOnStartup() {
+  await ensureAlarm();
   await getStoredState();
   const tabs = await chrome.tabs.query({});
   const now = Date.now();
@@ -264,7 +365,6 @@ async function initOnStartup() {
     }
   }
   await persistLastActivity();
-  await ensureAlarm();
 }
 
 chrome.runtime.onStartup.addListener(initOnStartup);
@@ -294,6 +394,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id) markTabActive(tab.id);
+});
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   lastActivityByTab.delete(tabId);
   persistLastActivity();
@@ -301,35 +405,76 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const safeSend = (value) => {
+    try {
+      sendResponse(value);
+    } catch (e) {
+      console.warn('[TabHibernate] sendResponse failed', e);
+    }
+  };
   if (msg.type === 'activity') {
     const tabId = sender.tab?.id;
     if (tabId) markTabActive(tabId);
-    sendResponse({ ok: true });
+    safeSend({ ok: true });
     return true;
   }
   if (msg.type === 'getRestoreData') {
     const tabId = msg.tabId;
     chrome.storage.local.get(`suspended_${tabId}`).then((data) => {
       const key = `suspended_${tabId}`;
-      sendResponse(data[key] || null);
+      safeSend(data[key] || null);
+    }).catch((e) => {
+      console.warn('[TabHibernate] getRestoreData failed', e);
+      safeSend(null);
     });
     return true;
   }
   if (msg.type === 'backupNow') {
-    runBackup('manual').then(sendResponse);
+    runBackup('manual').then((res) => safeSend(res)).catch((e) => {
+      console.warn('[TabHibernate] backupNow failed', e);
+      safeSend({ count: 0, error: String(e.message) });
+    });
     return true;
   }
   if (msg.type === 'getStats') {
     chrome.storage.local.get(['suspendedToday', 'suspendedTodayDate']).then((data) => {
       const today = new Date().toISOString().slice(0, 10);
       const count = data.suspendedTodayDate === today ? (data.suspendedToday || 0) : 0;
-      sendResponse({ suspendedToday: count });
+      safeSend({ suspendedToday: count });
+    }).catch((e) => {
+      console.warn('[TabHibernate] getStats failed', e);
+      safeSend({ suspendedToday: 0 });
+    });
+    return true;
+  }
+  if (msg.type === 'getStatus') {
+    Promise.all([
+      chrome.storage.local.get(['suspendedToday', 'suspendedTodayDate', 'lastAlarmRun']),
+      getEligibleTabsForBackup(),
+    ]).then(([data, eligibleTabs]) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const suspendedToday = data.suspendedTodayDate === today ? (data.suspendedToday || 0) : 0;
+      safeSend({
+        suspendedToday,
+        lastAlarmRun: data.lastAlarmRun || 0,
+        eligibleTabCount: eligibleTabs.length,
+      });
+    }).catch((e) => {
+      console.warn('[TabHibernate] getStatus failed', e);
+      safeSend({ suspendedToday: 0, lastAlarmRun: 0, eligibleTabCount: 0 });
     });
     return true;
   }
   if (msg.type === 'clearRestoreData') {
     if (msg.tabId) chrome.storage.local.remove(`suspended_${msg.tabId}`);
-    sendResponse({ ok: true });
+    safeSend({ ok: true });
+    return true;
+  }
+  if (msg.type === 'suspendAllNow') {
+    runSuspendAllNow().then((res) => safeSend(res)).catch((e) => {
+      console.warn('[TabHibernate] suspendAllNow failed', e);
+      safeSend({ suspended: 0, error: String(e.message) });
+    });
     return true;
   }
   return false;
