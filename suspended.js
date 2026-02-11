@@ -1,6 +1,6 @@
 /**
- * Страница-заглушка после режима Placeholder: показывает URL и кнопку «Восстановить».
- * Читает данные из chrome.storage.local напрямую — не зависит от Service Worker (работает даже если SW спит).
+ * Placeholder page after Placeholder mode: shows URL and Restore button.
+ * Reads from chrome.storage.local so it works even when the service worker is idle.
  */
 
 const params = new URLSearchParams(window.location.search);
@@ -15,12 +15,13 @@ function showError(msg) {
   if (btn) btn.disabled = true;
 }
 
+// Restore: load original URL in this same tab (no new tab, no window.close).
 function restore(url) {
   btn.disabled = true;
   const key = `suspended_${tabId}`;
   chrome.storage.local.remove(key);
   chrome.tabs.update(tabId, { url }).then(() => {
-    window.close();
+    // Tab navigates to url; this page is replaced. Do not close the tab.
   }).catch((e) => {
     console.warn('[TabHibernate] restore failed', e);
     btn.disabled = false;
@@ -28,12 +29,12 @@ function restore(url) {
 }
 
 if (!tabId) {
-  showError('Неизвестная вкладка');
+  showError('Unknown tab');
 } else {
   const key = `suspended_${tabId}`;
   chrome.storage.local.get(key, (data) => {
     if (chrome.runtime.lastError) {
-      showError('Ошибка доступа к данным');
+      showError('Could not load restore data');
       return;
     }
     const item = data[key];
@@ -48,7 +49,7 @@ if (!tabId) {
       urlEl.appendChild(link);
       if (btn) btn.onclick = () => restore(item.url);
     } else {
-      showError('Данные восстановления недоступны');
+      showError('Restore data unavailable');
     }
   });
 }

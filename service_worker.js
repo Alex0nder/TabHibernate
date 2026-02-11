@@ -284,6 +284,33 @@ async function runSuspendAllNow() {
   return { suspended };
 }
 
+/** Restore all tabs that are currently showing the suspended placeholder (same-tab navigation). */
+async function runRestoreAllSuspended() {
+  const suspendedBase = chrome.runtime.getURL('suspended.html').split('?')[0];
+  const tabs = await chrome.tabs.query({});
+  let restored = 0;
+  for (const tab of tabs) {
+    if (!tab.url || !tab.id || !tab.url.startsWith(suspendedBase)) continue;
+    try {
+      const u = new URL(tab.url);
+      const tabIdParam = u.searchParams.get('tabId');
+      const tid = tabIdParam ? parseInt(tabIdParam, 10) : null;
+      if (tid == null) continue;
+      const key = `suspended_${tid}`;
+      const data = await chrome.storage.local.get(key);
+      const item = data[key];
+      if (item && item.url) {
+        await chrome.tabs.update(tid, { url: item.url });
+        await chrome.storage.local.remove(key);
+        restored++;
+      }
+    } catch (e) {
+      console.warn('[TabHibernate] restore tab failed', tab.id, e);
+    }
+  }
+  return { restored };
+}
+
 /** Основная проверка по будильнику: суспенд неактивных и при необходимости бэкап. */
 async function onAlarmCheck() {
   await chrome.storage.local.set({ lastAlarmRun: Date.now() });
@@ -472,6 +499,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runSuspendAllNow().then((res) => safeSend(res)).catch((e) => {
       console.warn('[TabHibernate] suspendAllNow failed', e);
       safeSend({ suspended: 0, error: String(e.message) });
+    });
+    return true;
+  }
+  if (msg.type === 'restoreAllSuspended') {
+    runRestoreAllSuspended().then((res) => safeSend(res)).catch((e) => {
+      console.warn('[TabHibernate] restoreAllSuspended failed', e);
+      safeSend({ restored: 0, error: String(e.message) });
     });
     return true;
   }

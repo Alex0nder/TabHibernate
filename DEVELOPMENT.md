@@ -1,71 +1,71 @@
-# План развития Tab Hibernate
+# Tab Hibernate — Development roadmap
 
-Цель: стабильная, предсказуемая работа без сбоев при долгой работе и после сна Service Worker.
-
----
-
-## 1. Стабильность (приоритет высокий)
-
-| Задача | Зачем |
-|--------|--------|
-| **Восстанавливать state при каждом срабатывании alarm** | После сна SW память пуста; без восстановления `lastActivityByTab` из storage все вкладки считаются неактивными и могут массово суспендиться. |
-| **Throttle записи lastActivity в storage** | Частые `persistLastActivity()` при каждом движении мыши создают лишнюю нагрузку и могут упираться в лимиты storage. Ограничить до 1 раза в 3–5 сек. |
-| **Обработка ошибок в onMessage** | Все async-ответы оборачивать в try/catch и всегда вызывать `sendResponse`, иначе popup/suspended зависнут в ожидании. |
-| **Новые вкладки помечать как активные** | Подписка на `chrome.tabs.onCreated` — иначе новая вкладка без content script до первого переключения может сразу считаться неактивной. |
-| **Suspended page без зависимости от SW** | Читать данные восстановления из `chrome.storage.local` прямо в suspended.js — страница будет работать, даже если SW спит. |
-| **Периодическая очистка lastActivityByTab** | Удалять из map/storage записи по несуществующим tabId (после закрытия вкладок), чтобы не раздувать storage при долгой работе. |
+Goal: stable, predictable behavior under long runs and after the service worker sleeps.
 
 ---
 
-## 2. Надёжность API и граничные случаи
+## 1. Stability (high priority)
 
-| Задача | Зачем |
-|--------|--------|
-| **Проверять существование таба перед discard/update** | `chrome.tabs.get(tabId)` перед действием — избежать ошибок «tab not found» при быстром закрытии. |
-| **Квоты storage** | Не хранить бесконечную историю бэкапов; ограничить число дней или размер ключей `backup_YYYY-MM-DD` (например, хранить последние 30 дней). |
-| **Закладки: лимит на создание** | При сотнях вкладок создавать закладки батчами или с задержкой, обрабатывать отказы и не падать. |
-| **Alarm при отключении расширения** | При `enabled: false` не удалять alarm (чтобы не терять его при повторном включении), а просто не выполнять suspend в `onAlarmCheck`. Уже так сделано. |
-
----
-
-## 3. UX и обратная связь
-
-| Задача | Зачем |
-|--------|--------|
-| **Popup: проверка доступности SW** | Если popup открыт после долгого простоя, первый `sendMessage` может не дойти. Повтор запроса 1–2 раза с небольшой задержкой или показать «Обновить». |
-| **Popup: явная обработка lastError** | Проверять `chrome.runtime.lastError` во всех колбэках sendMessage и показывать пользователю короткое сообщение при ошибке. |
-| **Бейдж на иконке** | Показывать число приостановленных сегодня вкладок (опционально). |
-| **Уведомление при первом суспенде** | Один раз показать, что расширение сработало (опционально, с настройкой «не показывать снова»). |
+| Task | Why |
+|------|-----|
+| **Restore state on every alarm run** | After SW sleep, in-memory state is lost; without restoring `lastActivityByTab` from storage, tabs can be treated as inactive and suspended in bulk. |
+| **Throttle lastActivity writes to storage** | Frequent `persistLastActivity()` on every mouse move adds load and can hit storage limits. Throttle to once every 3–5 sec. |
+| **Error handling in onMessage** | Wrap async handlers in try/catch and always call `sendResponse`, or popup/suspended may hang. |
+| **Mark new tabs as active** | Subscribe to `chrome.tabs.onCreated` so new tabs are not treated as inactive before first focus. |
+| **Suspended page independent of SW** | Read restore data from `chrome.storage.local` in suspended.js so the page works when the SW is idle. |
+| **Prune lastActivityByTab** | Remove entries for closed tab IDs to avoid unbounded storage growth. |
 
 ---
 
-## 4. Дальнейшие функции (по желанию)
+## 2. API and edge cases
 
-| Задача | Зачем |
-|--------|--------|
-| **Белый список сайтов** | Не суспендить выбранные домены (например, почта, мессенджеры). |
-| **Исключение вкладок с несохранёнными формами** | Нереализуемо надёжно без внедрения в страницу; только документировать ограничение. |
-| **Режим «суспендить в инкогнито»** | Опция в настройках. |
-| **Экспорт/импорт настроек** | Резервная копия настроек в JSON. |
-| **Минимальный интервал проверки** | Сейчас 1 мин; при желании сделать настраиваемым (1/2/5 мин) с оговоркой про нагрузку на батарею. |
-
----
-
-## 5. Качество кода и поддержка
-
-| Задача | Зачем |
-|--------|--------|
-| **Единый префикс логов** | Все сообщения с `[TabHibernate]` для фильтрации в chrome://extensions → Service worker → Inspect. |
-| **Версионирование storage** | Ключ `storageVersion` в storage; при обновлении расширения при необходимости мигрировать старые ключи. |
-| **Комментарии к неочевидному поведению Chrome** | Например: alarm может сработать с задержкой после пробуждения SW; content script не инжектируется в chrome:// и т.д. |
+| Task | Why |
+|------|-----|
+| **Check tab exists before discard/update** | Use `chrome.tabs.get(tabId)` first to avoid “tab not found” on rapid close. |
+| **Storage quotas** | Cap backup history (e.g. keep last 30 days for `backup_YYYY-MM-DD`). |
+| **Bookmark creation limits** | With hundreds of tabs, create bookmarks in batches or with delay and handle failures. |
+| **Alarm when extension disabled** | Keep the alarm when `enabled: false` and simply skip suspend in `onAlarmCheck`. Already done. |
 
 ---
 
-## Реализовано в коде (текущий коммит)
+## 3. UX and feedback
 
-- Восстановление `lastActivityByTab` в начале `onAlarmCheck`.
-- Throttle `persistLastActivity` (не чаще раза в 4 сек).
-- Все async-обработчики сообщений с try/catch и гарантированным `sendResponse`.
-- `tabs.onCreated` — новые вкладки помечаются как активные.
-- Suspended page читает данные из `chrome.storage.local` напрямую (не зависит от SW).
-- Очистка записей по несуществующим вкладкам при проверке по alarm.
+| Task | Why |
+|------|-----|
+| **Popup: SW availability** | Retry sendMessage once or twice with a short delay, or show “Refresh”, when popup opens after long idle. |
+| **Popup: lastError handling** | Check `chrome.runtime.lastError` in all sendMessage callbacks and show a short message on failure. |
+| **Badge with count** | Optionally show suspended-today count on the icon. |
+| **First-suspend notification** | Optionally notify once that the extension ran (with “don’t show again”). |
+
+---
+
+## 4. Future (optional)
+
+| Task | Why |
+|------|-----|
+| **Site whitelist** | Do not suspend selected domains (e.g. mail, messengers). |
+| **Exclude tabs with unsaved forms** | Not reliably detectable without page injection; document the limitation only. |
+| **Suspend in incognito** | Optional setting. |
+| **Export/import settings** | Backup settings as JSON. |
+| **Configurable check interval** | Currently 1 min; make it 1/2/5 min with a note about battery. |
+
+---
+
+## 5. Code quality
+
+| Task | Why |
+|------|-----|
+| **Consistent log prefix** | Use `[TabHibernate]` for filtering in chrome://extensions → Service worker → Inspect. |
+| **Storage versioning** | Add `storageVersion`; migrate old keys on extension update if needed. |
+| **Comments for Chrome quirks** | E.g. alarm may fire delayed after SW wake; content script not injected in chrome://. |
+
+---
+
+## Already implemented
+
+- Restore `lastActivityByTab` at the start of `onAlarmCheck`.
+- Throttle `persistLastActivity` (at most once per 4 sec).
+- Async message handlers with try/catch and guaranteed `sendResponse`.
+- `tabs.onCreated` — new tabs marked active.
+- Suspended page reads from `chrome.storage.local` directly.
+- Prune stale tab IDs on each alarm run.

@@ -1,6 +1,6 @@
 /**
- * Popup: загрузка/сохранение настроек, кнопка бэкапа, отображение счётчика приостановок.
- * Учитывает lastError и повтор запроса при «спящем» Service Worker.
+ * Popup: load/save settings, backup button, suspend-all, stats.
+ * Handles lastError and retries when the service worker is waking up.
  */
 
 const el = {
@@ -9,6 +9,7 @@ const el = {
   mode: document.getElementById('mode'),
   backup: document.getElementById('backup'),
   suspendAll: document.getElementById('suspendAll'),
+  restoreAll: document.getElementById('restoreAll'),
   stats: document.getElementById('stats'),
   statusLine: document.getElementById('statusLine'),
 };
@@ -51,30 +52,30 @@ function sendMessageWithRetry(msg, retries = 3) {
 }
 
 function formatLastCheck(ts) {
-  if (!ts) return 'ещё не было';
+  if (!ts) return 'never';
   const min = Math.floor((Date.now() - ts) / 60000);
-  if (min < 1) return 'только что';
-  if (min === 1) return '1 мин назад';
-  return `${min} мин назад`;
+  if (min < 1) return 'just now';
+  if (min === 1) return '1 min ago';
+  return `${min} min ago`;
 }
 
 async function refreshStats() {
   try {
     const res = await sendMessageWithRetry({ type: 'getStatus' });
     if (res && typeof res.suspendedToday === 'number') {
-      el.stats.textContent = `Приостановлено сегодня: ${res.suspendedToday}`;
+      el.stats.textContent = `Suspended today: ${res.suspendedToday}`;
     }
     if (res && el.statusLine) {
       const lastRun = res.lastAlarmRun || 0;
       const eligible = typeof res.eligibleTabCount === 'number' ? res.eligibleTabCount : 0;
-      el.statusLine.textContent = `Проверка: ${formatLastCheck(lastRun)} • Подходящих вкладок: ${eligible}`;
+      el.statusLine.textContent = `Last check: ${formatLastCheck(lastRun)} • Eligible tabs: ${eligible}`;
       if (lastRun && Date.now() - lastRun > 10 * 60 * 1000) {
-        el.statusLine.textContent += ' (давно — перезагрузите расширение при необходимости)';
+        el.statusLine.textContent += ' (reload extension if needed)';
       }
     }
   } catch (e) {
-    el.stats.textContent = 'Приостановлено сегодня: —';
-    if (el.statusLine) el.statusLine.textContent = 'Нет связи с расширением. Откройте popup снова.';
+    el.stats.textContent = 'Suspended today: —';
+    if (el.statusLine) el.statusLine.textContent = 'No connection to extension. Open popup again.';
   }
 }
 
@@ -84,18 +85,18 @@ el.mode.addEventListener('change', saveSettings);
 
 el.backup.addEventListener('click', async () => {
   el.backup.disabled = true;
-  el.backup.textContent = 'Сохранение…';
+  el.backup.textContent = 'Saving…';
   try {
     const res = await sendMessageWithRetry({ type: 'backupNow' });
     const count = res && typeof res.count === 'number' ? res.count : 0;
-    el.backup.textContent = count > 0 ? `Готово (${count})` : 'Готово';
+    el.backup.textContent = count > 0 ? `Done (${count})` : 'Done';
     if (res && res.error) el.stats.textContent = res.error;
   } catch (e) {
-    el.backup.textContent = 'Ошибка';
-    el.stats.textContent = 'Не удалось связаться с расширением. Попробуйте открыть popup снова.';
+    el.backup.textContent = 'Error';
+    el.stats.textContent = 'Could not reach extension. Open popup again.';
   }
   setTimeout(() => {
-    el.backup.textContent = 'Бэкап вкладок сейчас';
+    el.backup.textContent = 'Backup tabs now';
     el.backup.disabled = false;
     refreshStats();
   }, 2000);
@@ -104,18 +105,36 @@ el.backup.addEventListener('click', async () => {
 if (el.suspendAll) {
   el.suspendAll.addEventListener('click', async () => {
     el.suspendAll.disabled = true;
-    el.suspendAll.textContent = 'Приостановка…';
+    el.suspendAll.textContent = 'Suspending…';
     try {
       const res = await sendMessageWithRetry({ type: 'suspendAllNow' });
       const n = res && typeof res.suspended === 'number' ? res.suspended : 0;
-      el.suspendAll.textContent = n > 0 ? `Приостановлено: ${n}` : 'Готово';
+      el.suspendAll.textContent = n > 0 ? `Suspended: ${n}` : 'Done';
       refreshStats();
     } catch (e) {
-      el.suspendAll.textContent = 'Ошибка';
+      el.suspendAll.textContent = 'Error';
     }
     setTimeout(() => {
-      el.suspendAll.textContent = 'Приостановить все вкладки';
+      el.suspendAll.textContent = 'Suspend all tabs';
       el.suspendAll.disabled = false;
+    }, 2000);
+  });
+}
+
+if (el.restoreAll) {
+  el.restoreAll.addEventListener('click', async () => {
+    el.restoreAll.disabled = true;
+    el.restoreAll.textContent = 'Restoring…';
+    try {
+      const res = await sendMessageWithRetry({ type: 'restoreAllSuspended' });
+      const n = res && typeof res.restored === 'number' ? res.restored : 0;
+      el.restoreAll.textContent = n > 0 ? `Restored: ${n}` : 'Done';
+    } catch (e) {
+      el.restoreAll.textContent = 'Error';
+    }
+    setTimeout(() => {
+      el.restoreAll.textContent = 'Restore all tabs';
+      el.restoreAll.disabled = false;
     }, 2000);
   });
 }

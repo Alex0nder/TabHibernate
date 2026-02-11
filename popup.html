@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Tab Hibernate</title>
@@ -103,16 +103,35 @@
       color: var(--th-text-muted);
       line-height: 1.4;
     }
+    .about {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--th-border);
+    }
+    .about-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--th-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 0 0 6px;
+    }
+    .about-text {
+      font-size: 11px;
+      color: var(--th-text-muted);
+      line-height: 1.45;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
   <h2>Tab Hibernate</h2>
   <div class="row">
-    <label for="enabled">Включить</label>
+    <label for="enabled">Enable</label>
     <input type="checkbox" id="enabled" checked>
   </div>
   <div class="row">
-    <label for="timeout">Таймаут (мин)</label>
+    <label for="timeout">Timeout (min)</label>
     <select id="timeout">
       <option value="5" selected>5</option>
       <option value="10">10</option>
@@ -120,22 +139,29 @@
     </select>
   </div>
   <div class="row">
-    <label for="mode">Режим</label>
+    <label for="mode">Mode</label>
     <select id="mode">
       <option value="discard">Discard</option>
       <option value="placeholder" selected>Placeholder</option>
     </select>
   </div>
-  <p class="mode-hint">Заглушка с текстом показывается только в режиме Placeholder.</p>
+  <p class="mode-hint">The stub page is shown only in Placeholder mode.</p>
   <div class="row">
-    <button id="backup">Бэкап вкладок сейчас</button>
+    <button id="backup">Backup tabs now</button>
   </div>
   <div class="row">
-    <button id="suspendAll" class="btn-secondary">Приостановить все вкладки</button>
+    <button id="suspendAll" class="btn-secondary">Suspend all tabs</button>
   </div>
-  <div class="stats" id="stats">Приостановлено сегодня: —</div>
+  <div class="row">
+    <button id="restoreAll" class="btn-secondary">Restore all tabs</button>
+  </div>
+  <div class="stats" id="stats">Suspended today: —</div>
   <div class="stats" id="statusLine">—</div>
-  <div class="hint" id="hint">Приостанавливаются только фоновые вкладки (не активная, не закреплённая).</div>
+  <div class="hint" id="hint">Only background tabs are suspended (not the active or pinned one).</div>
+  <div class="about">
+    <p class="about-title">About</p>
+    <p class="about-text">Suspends background tabs after 5–15 min or on demand, saves URLs to bookmarks (Tab Backup / date) and local storage. Placeholder mode shows a stub with a Restore button.</p>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>

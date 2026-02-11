@@ -1,5 +1,5 @@
 /**
- * Тёмная минималистичная тема — нейтральные оттенки, без зелёного.
+ * Dark minimal theme — neutral tones, no green.
  */
 :root {
   /* Backgrounds */
@@ -15,10 +15,10 @@
   --th-text-primary: #e6edf3;
   --th-text-secondary: #8b949e;
   --th-text-muted: #6e7681;
-  /* Accents — только холодные нейтральные */
+  /* Accents — cool neutrals */
   --th-accent: #7ca4d8;
   --th-accent-cyan: #6b9bb5;
-  /* Buttons — минималистичные, нейтральные */
+  /* Buttons — minimal, neutral */
   --th-btn-primary-bg: #2d333b;
   --th-btn-primary-hover: #373e47;
   --th-btn-primary-text: #e6edf3;

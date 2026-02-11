@@ -1,40 +1,42 @@
 # Tab Hibernate
 
-Chrome-расширение (Manifest V3), которое снижает потребление памяти за счёт приостановки неактивных вкладок и создаёт бэкап их URL в закладках и в `chrome.storage.local`.
+**Chrome extension (Manifest V3)** that reduces memory usage by automatically suspending inactive tabs after a timeout (5–15 min), saving their URLs to bookmarks and local storage. Two modes: **Discard** (unload tab) and **Placeholder** (stub page with “Restore” button). Manual “Suspend all tabs” and “Backup tabs now” are available.
 
-**Требования:** Chrome с поддержкой Manifest V3 (Chrome 88+).
+- Repository: [github.com/Alex0nder/TabHibernate](https://github.com/Alex0nder/TabHibernate)
 
-## Установка
+**Requirements:** Chrome with Manifest V3 support (Chrome 88+).
 
-1. Клонируйте репозиторий или скачайте архив.
-2. Откройте `chrome://extensions`.
-3. Включите «Режим разработчика».
-4. Нажмите «Загрузить распакованное расширение» и выберите папку проекта.
+## Installation
 
-## Функции
+1. Clone the repo or download the archive.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select the project folder.
 
-- **Таймаут неактивности**: вкладка считается неактивной, если нет взаимодействия 5 минут (настраивается в popup: 5 / 10 / 15 мин).
-- **Два режима приостановки**:
-  - **Discard** — `chrome.tabs.discard(tabId)` (вкладка выгружается, при клике перезагружается).
-  - **Placeholder** — редирект на страницу расширения с кнопкой «Восстановить» исходный URL.
-- **Бэкап**: при приостановке и по кнопке «Бэкап вкладок сейчас» — закладки в папке **Tab Backup / YYYY-MM-DD** и JSON в `chrome.storage.local`.
-- **Ручная приостановка**: кнопка «Приостановить все вкладки» в popup.
-- **Исключения**: не приостанавливаются активная вкладка, закреплённые, со звуком, `chrome://`, `chrome-extension://`, инкогнито.
+## Features
 
-## Ограничения
+- **Inactivity timeout:** a tab is considered inactive after no interaction for 5 min (configurable in popup: 5 / 10 / 15 min).
+- **Two suspension modes:**
+  - **Discard** — `chrome.tabs.discard(tabId)` (tab is unloaded; clicking reloads it).
+  - **Placeholder** — redirect to extension stub page with a “Restore” button for the original URL.
+- **Backup:** on suspend and via “Backup tabs now” — bookmarks in **Tab Backup / YYYY-MM-DD** and JSON in `chrome.storage.local`.
+- **Manual suspend:** “Suspend all tabs” button in the popup.
+- **Exclusions:** active tab, pinned, audible, `chrome://`, `chrome-extension://`, and incognito tabs are not suspended.
 
-- При приостановке (discard или placeholder) страница выгружается. **Несохранённые данные в формах и состояние SPA могут быть потеряны** — используйте сохранение/автосохранение на важных страницах.
+## Limitations
 
-## Структура
+- When a tab is suspended (discard or placeholder), the page is unloaded. **Unsaved form data and SPA state may be lost** — use save/autosave on important pages.
+
+## Structure
 
 - `manifest.json` — MV3, permissions, background, content_script.
-- `service_worker.js` — таймер (alarms), учёт активности, логика suspend и бэкапа.
-- `content_script.js` — отправка событий активности (mousemove, keydown, scroll) в service worker.
-- `popup.html` / `popup.js` — настройки, бэкап, ручная приостановка, статистика.
-- `theme.css` — тёмная минималистичная тема.
-- `suspended.html` / `suspended.js` — страница-заглушка в режиме Placeholder с кнопкой «Восстановить».
-- `DEVELOPMENT.md` — план развития и стабильности.
+- `service_worker.js` — alarm timer, activity tracking, suspend and backup logic.
+- `content_script.js` — reports activity (mousemove, keydown, scroll) to the service worker.
+- `popup.html` / `popup.js` — settings, backup, suspend-all, stats.
+- `theme.css` — dark minimal theme.
+- `suspended.html` / `suspended.js` — Placeholder stub page with “Restore” button.
+- `DEVELOPMENT.md` — roadmap and stability notes.
 
-## Лицензия
+## License
 
 MIT.
