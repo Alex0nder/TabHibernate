@@ -17,8 +17,15 @@ const PERSIST_THROTTLE_MS = 4000;
 async function getStoredState() {
   const raw = await chrome.storage.local.get(['lastActivityByTab', 'settings', 'suspendedToday', 'suspendedTodayDate']);
   if (raw.lastActivityByTab && typeof raw.lastActivityByTab === 'object') {
+    const now = Date.now();
     lastActivityByTab = new Map(
-      Object.entries(raw.lastActivityByTab).map(([k, v]) => [Number(k), v])
+      Object.entries(raw.lastActivityByTab)
+        .map(([k, v]) => {
+          const id = Number(k);
+          const ts = typeof v === 'number' && !Number.isNaN(v) && v > 0 ? v : now;
+          return [id, ts];
+        })
+        .filter(([id]) => !Number.isNaN(id))
     );
   }
   return raw;
@@ -38,36 +45,50 @@ async function persistLastActivity() {
   }
 }
 
+/** Проверка по полному URL текущего расширения (для своих редиректов). */
 function isSuspendedPlaceholderUrl(url) {
   const base = chrome.runtime.getURL('suspended.html');
   return url && url.startsWith(base.split('?')[0]);
 }
 
+/** Определяет заглушку по пути и tabId — работает и после обновления расширения,
+ * когда вкладки ещё открыты со старым chrome-extension://OLD_ID/suspended.html. */
+function isPlaceholderTabUrl(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.pathname.endsWith('suspended.html') && u.searchParams.has('tabId');
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Таб нельзя суспендить: активный, закреплённый, со звуком, системный, инкогнито, уже placeholder.
+ * allowActive: при true разрешает суспендить активную вкладку (кнопка «Остановить текущую»).
  * ВАЖНО: Discard и Placeholder оба приводят к выгрузке страницы. Несохранённые формы и состояние
- * SPA (например, ввод в полях, несохранённые черновики) будут потеряны — это ограничение Chrome API.
+ * SPA будут потеряны — это ограничение Chrome API.
  */
-async function isTabEligibleForSuspend(tab) {
+async function isTabEligibleForSuspend(tab, { allowActive = false } = {}) {
   if (!tab || !tab.id) return false;
-  if (tab.active) return false;
+  if (tab.active && !allowActive) return false;
   if (tab.pinned) return false;
   if (tab.audible) return false;
   if (tab.incognito) return false;
   const u = (tab.url || '').toLowerCase();
   if (u.startsWith('chrome://') || u.startsWith('chrome-extension://')) return false;
-  if (isSuspendedPlaceholderUrl(tab.url)) return false; // избегаем рекурсии и повторного suspend
+  if (isSuspendedPlaceholderUrl(tab.url) || isPlaceholderTabUrl(tab.url)) return false; // уже заглушка (в т.ч. со старым ID после обновления)
   return true;
 }
 
-/** Достаём настройки из storage (с дефолтами). */
+/** Достаём настройки из storage (дефолты не перезаписываются undefined из storage). */
 async function getSettings() {
   const { settings } = await chrome.storage.local.get('settings');
+  const s = settings || {};
   return {
-    enabled: settings?.enabled !== false,
-    timeoutMinutes: settings?.timeoutMinutes ?? INACTIVITY_MINUTES,
-    mode: (settings?.mode === 'placeholder' ? 'placeholder' : 'discard'),
-    ...settings,
+    enabled: s.enabled !== false,
+    timeoutMinutes: s.timeoutMinutes != null ? Number(s.timeoutMinutes) || INACTIVITY_MINUTES : INACTIVITY_MINUTES,
+    mode: s.mode === 'placeholder' ? 'placeholder' : 'discard',
   };
 }
 
@@ -86,10 +107,12 @@ function markTabActive(tabId) {
   persistLastActivity(); // fire-and-forget
 }
 
-/** Проверка: прошло ли timeout минут с последней активности. */
+/** Проверка: прошло ли timeout минут с последней активности.
+ * Вкладки без записи (новые или не успевшие попасть в storage) не считаем неактивными —
+ * иначе при пробуждении SW по будильнику они суспендились бы «слишком рано». */
 function isTabInactive(tabId, timeoutMinutes) {
   const last = lastActivityByTab.get(tabId);
-  if (last == null) return true; // никогда не видели активность — считаем неактивным после таймаута
+  if (last == null) return false; // неизвестная вкладка — не суспендим
   return (Date.now() - last) >= timeoutMinutes * 60 * 1000;
 }
 
@@ -110,18 +133,31 @@ async function suspendDiscard(tabId) {
   }
 }
 
-/** Режим Placeholder: сохраняем url+title, редирект на suspended.html; страница сама восстановит по кнопке. */
+/** URL можно сохранить и восстановить (не пустой, не about:blank). */
+function hasRestorableUrl(url) {
+  const u = (url || '').trim();
+  return u.length > 0 && u !== 'about:blank' && !u.startsWith('about:');
+}
+
+/** Режим Placeholder: сохраняем url+title, редирект на suspended.html.
+ * В query добавляем fallback-параметр u (URL), чтобы при потере storage заглушка могла восстановить. */
+const PLACEHOLDER_URL_PARAM_MAX = 1800;
+
 async function suspendPlaceholder(tabId, url, title) {
   try {
     await chrome.tabs.get(tabId);
   } catch (e) {
     return false;
   }
+  const safeUrl = url || '';
   const restoreKey = `suspended_${tabId}`;
   await chrome.storage.local.set({
-    [restoreKey]: { url: url || '', title: title || '', tabId },
+    [restoreKey]: { url: safeUrl, title: title || '', tabId },
   });
   const params = new URLSearchParams({ tabId: String(tabId) });
+  if (safeUrl && encodeURIComponent(safeUrl).length <= PLACEHOLDER_URL_PARAM_MAX) {
+    params.set('u', safeUrl);
+  }
   const suspendedUrl = chrome.runtime.getURL('suspended.html') + '?' + params.toString();
   try {
     await chrome.tabs.update(tabId, { url: suspendedUrl });
@@ -184,9 +220,12 @@ async function runBackup(source = 'manual') {
     seen.add(t.url);
     return true;
   });
-  if (unique.length === 0) return { count: 0, folderId: null };
+  if (unique.length === 0) return { count: 0, folderId: null, folderPath: null };
 
+  const dateStr = new Date().toISOString().slice(0, 10);
   const folderId = await getOrCreateBackupFolder();
+  const folderPath = `Tab Backup / ${dateStr}`;
+
   for (const t of unique) {
     try {
       await chrome.bookmarks.create({ parentId: folderId, title: (t.title || t.url).slice(0, 255), url: t.url });
@@ -195,7 +234,7 @@ async function runBackup(source = 'manual') {
     }
   }
 
-  const backupKey = `backup_${new Date().toISOString().slice(0, 10)}`;
+  const backupKey = `backup_${dateStr}`;
   const existing = await chrome.storage.local.get(backupKey);
   const list = existing[backupKey] || [];
   const existingUrls = new Set(list.map((x) => x.url));
@@ -206,7 +245,7 @@ async function runBackup(source = 'manual') {
     }
   }
   await chrome.storage.local.set({ [backupKey]: list });
-  return { count: unique.length, folderId };
+  return { count: unique.length, folderId, folderPath };
 }
 
 /** Удаляем из lastActivityByTab записи по закрытым вкладкам, чтобы не раздувать storage. */
@@ -236,6 +275,7 @@ async function runSuspendAllNow() {
   let suspended = 0;
   for (const tab of tabs) {
     if (!(await isTabEligibleForSuspend(tab))) continue;
+    if (settings.mode === 'placeholder' && !hasRestorableUrl(tab.url)) continue;
     if (settings.mode === 'discard') {
       const ok = await suspendDiscard(tab.id);
       if (ok) {
@@ -284,13 +324,34 @@ async function runSuspendAllNow() {
   return { suspended };
 }
 
-/** Restore all tabs that are currently showing the suspended placeholder (same-tab navigation). */
+/** Закрыть подходящие вкладки и сохранить их URL в closedAndSaved (лимит CLOSED_SAVED_MAX). */
+const CLOSED_SAVED_MAX = 2000;
+async function runCloseAndSaveAll() {
+  const tabs = await chrome.tabs.query({});
+  const toSave = [];
+  const idsToClose = [];
+  for (const tab of tabs) {
+    if (!(await isTabEligibleForSuspend(tab))) continue;
+    toSave.push({ url: tab.url || '', title: (tab.title || tab.url || '').slice(0, 512), savedAt: Date.now() });
+    idsToClose.push(tab.id);
+  }
+  if (toSave.length === 0) return { closed: 0 };
+  const { closedAndSaved = [] } = await chrome.storage.local.get('closedAndSaved');
+  const merged = [...toSave.reverse(), ...closedAndSaved].slice(0, CLOSED_SAVED_MAX);
+  await chrome.storage.local.set({ closedAndSaved: merged });
+  for (const id of idsToClose) {
+    try { await chrome.tabs.remove(id); } catch (e) { console.warn('[TabHibernate] tab remove failed', id, e); }
+  }
+  return { closed: idsToClose.length };
+}
+
+/** Restore all tabs that are currently showing the suspended placeholder.
+ * Сначала пробуем storage; если данных нет — восстанавливаем по fallback-параметру u в URL заглушки. */
 async function runRestoreAllSuspended() {
-  const suspendedBase = chrome.runtime.getURL('suspended.html').split('?')[0];
   const tabs = await chrome.tabs.query({});
   let restored = 0;
   for (const tab of tabs) {
-    if (!tab.url || !tab.id || !tab.url.startsWith(suspendedBase)) continue;
+    if (!tab.url || !tab.id || !isPlaceholderTabUrl(tab.url)) continue;
     try {
       const u = new URL(tab.url);
       const tabIdParam = u.searchParams.get('tabId');
@@ -299,8 +360,13 @@ async function runRestoreAllSuspended() {
       const key = `suspended_${tid}`;
       const data = await chrome.storage.local.get(key);
       const item = data[key];
-      if (item && item.url) {
-        await chrome.tabs.update(tid, { url: item.url });
+      let restoreUrl = item && item.url ? item.url : null;
+      if (!restoreUrl) {
+        const fallback = u.searchParams.get('u');
+        if (fallback && (fallback.startsWith('http://') || fallback.startsWith('https://'))) restoreUrl = fallback;
+      }
+      if (restoreUrl) {
+        await chrome.tabs.update(tab.id, { url: restoreUrl });
         await chrome.storage.local.remove(key);
         restored++;
       }
@@ -313,60 +379,75 @@ async function runRestoreAllSuspended() {
 
 /** Основная проверка по будильнику: суспенд неактивных и при необходимости бэкап. */
 async function onAlarmCheck() {
-  await chrome.storage.local.set({ lastAlarmRun: Date.now() });
-  await ensureAlarm();
+  try {
+    await chrome.storage.local.set({ lastAlarmRun: Date.now() });
+    await ensureAlarm();
 
-  await getStoredState();
-  await pruneStaleTabIds();
+    await getStoredState();
+    await pruneStaleTabIds();
 
-  const settings = await getSettings();
-  if (!settings.enabled) return;
+    const settings = await getSettings();
+    if (!settings.enabled) return;
 
-  const tabs = await chrome.tabs.query({});
-  const toBackup = [];
-  for (const tab of tabs) {
-    if (!(await isTabEligibleForSuspend(tab))) continue;
-    if (!isTabInactive(tab.id, settings.timeoutMinutes)) continue;
-
-    if (settings.mode === 'discard') {
-      const ok = await suspendDiscard(tab.id);
-      if (ok) toBackup.push({ url: tab.url, title: tab.title });
-    } else {
-      const ok = await suspendPlaceholder(tab.id, tab.url, tab.title);
-      if (ok) toBackup.push({ url: tab.url, title: tab.title });
-    }
-  }
-
-  if (toBackup.length > 0) {
-    const seen = new Set();
-    const unique = toBackup.filter((t) => {
-      if (seen.has(t.url)) return false;
-      seen.add(t.url);
-      return true;
-    });
-    const folderId = await getOrCreateBackupFolder();
-    for (const t of unique) {
-      try {
-        await chrome.bookmarks.create({
-          parentId: folderId,
-          title: (t.title || t.url).slice(0, 255),
-          url: t.url,
-        });
-      } catch (e) {
-        console.warn('[TabHibernate] backup bookmark failed', e);
+    const tabs = await chrome.tabs.query({});
+    const now = Date.now();
+    let needPersist = false;
+    for (const tab of tabs) {
+      if (tab.id && !lastActivityByTab.has(tab.id)) {
+        lastActivityByTab.set(tab.id, now);
+        needPersist = true;
       }
     }
-    const backupKey = `backup_${new Date().toISOString().slice(0, 10)}`;
-    const existing = await chrome.storage.local.get(backupKey);
-    const list = existing[backupKey] || [];
-    const existingUrls = new Set(list.map((x) => x.url));
-    for (const t of unique) {
-      if (!existingUrls.has(t.url)) {
-        list.push({ url: t.url, title: t.title || t.url, ts: Date.now() });
-        existingUrls.add(t.url);
+    if (needPersist) await persistLastActivity();
+
+    const toBackup = [];
+    for (const tab of tabs) {
+      if (!(await isTabEligibleForSuspend(tab))) continue;
+      if (!isTabInactive(tab.id, settings.timeoutMinutes)) continue;
+      if (settings.mode === 'placeholder' && !hasRestorableUrl(tab.url)) continue;
+
+      if (settings.mode === 'discard') {
+        const ok = await suspendDiscard(tab.id);
+        if (ok) toBackup.push({ url: tab.url, title: tab.title });
+      } else {
+        const ok = await suspendPlaceholder(tab.id, tab.url, tab.title);
+        if (ok) toBackup.push({ url: tab.url, title: tab.title });
       }
     }
-    await chrome.storage.local.set({ [backupKey]: list });
+
+    if (toBackup.length > 0) {
+      const seen = new Set();
+      const unique = toBackup.filter((t) => {
+        if (seen.has(t.url)) return false;
+        seen.add(t.url);
+        return true;
+      });
+      const folderId = await getOrCreateBackupFolder();
+      for (const t of unique) {
+        try {
+          await chrome.bookmarks.create({
+            parentId: folderId,
+            title: (t.title || t.url).slice(0, 255),
+            url: t.url,
+          });
+        } catch (e) {
+          console.warn('[TabHibernate] backup bookmark failed', e);
+        }
+      }
+      const backupKey = `backup_${new Date().toISOString().slice(0, 10)}`;
+      const existing = await chrome.storage.local.get(backupKey);
+      const list = existing[backupKey] || [];
+      const existingUrls = new Set(list.map((x) => x.url));
+      for (const t of unique) {
+        if (!existingUrls.has(t.url)) {
+          list.push({ url: t.url, title: t.title || t.url, ts: Date.now() });
+          existingUrls.add(t.url);
+        }
+      }
+      await chrome.storage.local.set({ [backupKey]: list });
+    }
+  } catch (e) {
+    console.warn('[TabHibernate] onAlarmCheck failed', e);
   }
 }
 
@@ -495,6 +576,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     safeSend({ ok: true });
     return true;
   }
+  if (msg.type === 'suspendCurrentTab') {
+    (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab) return safeSend({ ok: false, reason: 'No active tab' });
+        if (!(await isTabEligibleForSuspend(tab, { allowActive: true }))) {
+          const reason = tab.pinned ? 'Tab is pinned' : tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')
+            ? 'System page cannot be suspended' : 'Cannot suspend this tab';
+          return safeSend({ ok: false, reason });
+        }
+        const settings = await getSettings();
+        if (settings.mode === 'placeholder' && !hasRestorableUrl(tab.url)) {
+          return safeSend({ ok: false, reason: 'Cannot suspend: page has no restorable URL' });
+        }
+        const ok = settings.mode === 'discard'
+          ? await suspendDiscard(tab.id)
+          : await suspendPlaceholder(tab.id, tab.url, tab.title);
+        safeSend({ ok });
+      } catch (e) {
+        console.warn('[TabHibernate] suspendCurrentTab failed', e);
+        safeSend({ ok: false, reason: String(e.message) });
+      }
+    })();
+    return true;
+  }
   if (msg.type === 'suspendAllNow') {
     runSuspendAllNow().then((res) => safeSend(res)).catch((e) => {
       console.warn('[TabHibernate] suspendAllNow failed', e);
@@ -506,6 +612,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runRestoreAllSuspended().then((res) => safeSend(res)).catch((e) => {
       console.warn('[TabHibernate] restoreAllSuspended failed', e);
       safeSend({ restored: 0, error: String(e.message) });
+    });
+    return true;
+  }
+  if (msg.type === 'closeAndSaveAll') {
+    runCloseAndSaveAll().then((res) => safeSend(res)).catch((e) => {
+      console.warn('[TabHibernate] closeAndSaveAll failed', e);
+      safeSend({ closed: 0, error: String(e.message) });
     });
     return true;
   }

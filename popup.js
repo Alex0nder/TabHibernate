@@ -8,8 +8,11 @@ const el = {
   timeout: document.getElementById('timeout'),
   mode: document.getElementById('mode'),
   backup: document.getElementById('backup'),
+  suspendCurrent: document.getElementById('suspendCurrent'),
   suspendAll: document.getElementById('suspendAll'),
   restoreAll: document.getElementById('restoreAll'),
+  closeAndSave: document.getElementById('closeAndSave'),
+  openHistory: document.getElementById('openHistory'),
   stats: document.getElementById('stats'),
   statusLine: document.getElementById('statusLine'),
 };
@@ -89,18 +92,42 @@ el.backup.addEventListener('click', async () => {
   try {
     const res = await sendMessageWithRetry({ type: 'backupNow' });
     const count = res && typeof res.count === 'number' ? res.count : 0;
+    const path = res && res.folderPath ? res.folderPath : null;
     el.backup.textContent = count > 0 ? `Done (${count})` : 'Done';
     if (res && res.error) el.stats.textContent = res.error;
+    else if (path && count > 0) el.stats.textContent = `Saved to bookmarks: ${path}`;
   } catch (e) {
     el.backup.textContent = 'Error';
     el.stats.textContent = 'Could not reach extension. Open popup again.';
   }
   setTimeout(() => {
-    el.backup.textContent = 'Backup tabs now';
+    el.backup.textContent = 'Backup tabs to bookmarks';
     el.backup.disabled = false;
     refreshStats();
-  }, 2000);
+  }, 2500);
 });
+
+if (el.suspendCurrent) {
+  el.suspendCurrent.addEventListener('click', async () => {
+    el.suspendCurrent.disabled = true;
+    el.suspendCurrent.textContent = 'Suspending…';
+    try {
+      const res = await sendMessageWithRetry({ type: 'suspendCurrentTab' });
+      if (res && res.ok) {
+        el.suspendCurrent.textContent = 'Done';
+        refreshStats();
+      } else {
+        el.suspendCurrent.textContent = res?.reason || 'Cannot suspend';
+      }
+    } catch (e) {
+      el.suspendCurrent.textContent = 'Error';
+    }
+    setTimeout(() => {
+      el.suspendCurrent.textContent = 'Suspend current tab';
+      el.suspendCurrent.disabled = false;
+    }, 1500);
+  });
+}
 
 if (el.suspendAll) {
   el.suspendAll.addEventListener('click', async () => {
@@ -136,6 +163,32 @@ if (el.restoreAll) {
       el.restoreAll.textContent = 'Restore all tabs';
       el.restoreAll.disabled = false;
     }, 2000);
+  });
+}
+
+if (el.closeAndSave) {
+  el.closeAndSave.addEventListener('click', async () => {
+    el.closeAndSave.disabled = true;
+    el.closeAndSave.textContent = 'Closing…';
+    try {
+      const res = await sendMessageWithRetry({ type: 'closeAndSaveAll' });
+      const n = res && typeof res.closed === 'number' ? res.closed : 0;
+      el.closeAndSave.textContent = n > 0 ? `Closed: ${n}` : 'Done';
+      refreshStats();
+    } catch (e) {
+      el.closeAndSave.textContent = 'Error';
+    }
+    setTimeout(() => {
+      el.closeAndSave.textContent = 'Close all and save';
+      el.closeAndSave.disabled = false;
+    }, 2000);
+  });
+}
+
+if (el.openHistory) {
+  el.openHistory.addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
   });
 }
 

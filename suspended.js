@@ -1,11 +1,12 @@
 /**
- * Placeholder page after Placeholder mode: shows URL and Restore button.
- * Reads from chrome.storage.local so it works even when the service worker is idle.
+ * Placeholder page: показывает URL и кнопку Restore.
+ * Сначала читает из storage; при потере данных (обновление/переустановка) использует fallback из query (param u).
  */
 
 const params = new URLSearchParams(window.location.search);
 const tabIdParam = params.get('tabId');
 const tabId = tabIdParam ? parseInt(tabIdParam, 10) : null;
+const fallbackUrl = params.get('u') || '';
 
 const urlEl = document.getElementById('url');
 const btn = document.getElementById('reload');
@@ -15,16 +16,37 @@ function showError(msg) {
   if (btn) btn.disabled = true;
 }
 
-// Restore: load original URL in this same tab (no new tab, no window.close).
+function isRestorableUrl(url) {
+  return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://'));
+}
+
+function showUrlAndRestore(url) {
+  if (!url || !isRestorableUrl(url)) {
+    showError('Restore data unavailable');
+    return;
+  }
+  urlEl.innerHTML = '';
+  const link = document.createElement('a');
+  link.href = url;
+  link.textContent = url;
+  link.title = url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  urlEl.appendChild(link);
+  if (btn) btn.onclick = () => restore(url);
+}
+
+// Restore: загрузить URL в этой вкладке. getCurrent() нужен после перезапуска браузера (tabId в URL устарел).
 function restore(url) {
   btn.disabled = true;
   const key = `suspended_${tabId}`;
   chrome.storage.local.remove(key);
-  chrome.tabs.update(tabId, { url }).then(() => {
-    // Tab navigates to url; this page is replaced. Do not close the tab.
-  }).catch((e) => {
-    console.warn('[TabHibernate] restore failed', e);
-    btn.disabled = false;
+  chrome.tabs.getCurrent((tab) => {
+    const targetId = tab ? tab.id : tabId;
+    chrome.tabs.update(targetId, { url }).then(() => {}).catch((e) => {
+      console.warn('[TabHibernate] restore failed', e);
+      btn.disabled = false;
+    });
   });
 }
 
@@ -34,20 +56,18 @@ if (!tabId) {
   const key = `suspended_${tabId}`;
   chrome.storage.local.get(key, (data) => {
     if (chrome.runtime.lastError) {
-      showError('Could not load restore data');
+      if (isRestorableUrl(fallbackUrl)) {
+        showUrlAndRestore(fallbackUrl);
+      } else {
+        showError('Could not load restore data');
+      }
       return;
     }
     const item = data[key];
-    if (item && item.url) {
-      urlEl.innerHTML = '';
-      const link = document.createElement('a');
-      link.href = item.url;
-      link.textContent = item.url;
-      link.title = item.url;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      urlEl.appendChild(link);
-      if (btn) btn.onclick = () => restore(item.url);
+    if (item && item.url && isRestorableUrl(item.url)) {
+      showUrlAndRestore(item.url);
+    } else if (isRestorableUrl(fallbackUrl)) {
+      showUrlAndRestore(fallbackUrl);
     } else {
       showError('Restore data unavailable');
     }

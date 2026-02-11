@@ -97,6 +97,13 @@
       font-size: 11px;
       color: var(--th-text-muted);
     }
+    .backup-hint {
+      margin: -2px 0 10px;
+      font-size: 11px;
+      color: var(--th-text-muted);
+      line-height: 1.35;
+    }
+    .backup-hint strong { font-weight: 600; color: var(--th-text-secondary); }
     .hint {
       margin-top: 10px;
       font-size: 11px;
@@ -136,6 +143,10 @@
       <option value="5" selected>5</option>
       <option value="10">10</option>
       <option value="15">15</option>
+      <option value="20">20</option>
+      <option value="30">30</option>
+      <option value="45">45</option>
+      <option value="60">60 (1 hr)</option>
     </select>
   </div>
   <div class="row">
@@ -147,13 +158,23 @@
   </div>
   <p class="mode-hint">The stub page is shown only in Placeholder mode.</p>
   <div class="row">
-    <button id="backup">Backup tabs now</button>
+    <button id="backup">Backup tabs to bookmarks</button>
+  </div>
+  <p class="backup-hint">Saves links to bookmarks folder <strong>Tab Backup / date</strong> and to local storage.</p>
+  <div class="row">
+    <button id="suspendCurrent" class="btn-secondary">Suspend current tab</button>
   </div>
   <div class="row">
     <button id="suspendAll" class="btn-secondary">Suspend all tabs</button>
   </div>
   <div class="row">
     <button id="restoreAll" class="btn-secondary">Restore all tabs</button>
+  </div>
+  <div class="row">
+    <button id="closeAndSave" class="btn-secondary">Close all and save</button>
+  </div>
+  <div class="row">
+    <a id="openHistory" href="#" style="color: var(--th-accent-cyan); font-size: 13px;">History (export / import)</a>
   </div>
   <div class="stats" id="stats">Suspended today: —</div>
   <div class="stats" id="statusLine">—</div>

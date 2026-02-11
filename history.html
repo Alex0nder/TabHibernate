@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tab Hibernate — History</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: 'SF Pro Text', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: var(--th-bg-base);
+      color: var(--th-text-primary);
+      max-width: 720px;
+    }
+    h1 { font-size: 20px; margin: 0 0 20px; font-weight: 600; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 8px 14px;
+      background: var(--th-btn-primary-bg);
+      color: var(--th-btn-primary-text);
+      border: none;
+      border-radius: var(--th-radius);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button:hover { background: var(--th-btn-primary-hover); }
+    button.secondary {
+      background: var(--th-bg-elevated);
+      color: var(--th-accent-cyan);
+      border: 1px solid var(--th-border);
+    }
+    button.secondary:hover { background: var(--th-bg-card); }
+    input[type="file"] { display: none; }
+    .section { margin-bottom: 24px; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--th-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    .list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      border: 1px solid var(--th-border);
+      border-radius: var(--th-radius);
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--th-border-subtle);
+    }
+    .list li:last-child { border-bottom: none; }
+    .list li:hover { background: var(--th-bg-card); }
+    input[type="checkbox"] { flex-shrink: 0; accent-color: var(--th-accent-cyan); cursor: pointer; }
+    .item-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-url { font-size: 11px; color: var(--th-text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .item-meta { font-size: 11px; color: var(--th-text-muted); flex-shrink: 0; }
+    .empty { color: var(--th-text-muted); padding: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Tab Hibernate — History</h1>
+  <div class="toolbar">
+    <button id="exportBtn">Export (download .json)</button>
+    <button id="importBtn" class="secondary">Import from file</button>
+    <input type="file" id="importFile" accept=".json,application/json">
+    <button id="openSelected" class="secondary">Open selected in tabs</button>
+  </div>
+  <div class="section">
+    <div class="section-title">Closed and saved</div>
+    <ul class="list" id="closedList"></ul>
+  </div>
+  <div class="section">
+    <div class="section-title">Backups by date</div>
+    <ul class="list" id="backupList"></ul>
+  </div>
+  <script src="history.js"></script>
+</body>
+</html>
