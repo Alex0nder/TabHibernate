@@ -7,7 +7,6 @@
 const ALARM_CHECK_NAME = 'tabHibernateCheck';
 const ALARM_CHECK_PERIOD_MINUTES = 1;
 const INACTIVITY_MINUTES = 5;
-const SUSPENDED_PAGE_PATH = '/suspended.html';
 
 // ——— Хранение последней активности по tabId (в памяти + синхронизация при сообщениях)
 // После сна SW память пуста — восстанавливаем из storage в начале onAlarmCheck.
@@ -18,7 +17,9 @@ const PERSIST_THROTTLE_MS = 4000;
 async function getStoredState() {
   const raw = await chrome.storage.local.get(['lastActivityByTab', 'settings', 'suspendedToday', 'suspendedTodayDate']);
   if (raw.lastActivityByTab && typeof raw.lastActivityByTab === 'object') {
-    lastActivityByTab = new Map(Object.entries(raw.lastActivityByTab));
+    lastActivityByTab = new Map(
+      Object.entries(raw.lastActivityByTab).map(([k, v]) => [Number(k), v])
+    );
   }
   return raw;
 }
@@ -28,20 +29,18 @@ async function persistLastActivity() {
   if (now - lastPersistTime < PERSIST_THROTTLE_MS) return;
   lastPersistTime = now;
   try {
-    const obj = Object.fromEntries(lastActivityByTab);
+    const obj = Object.fromEntries(
+      [...lastActivityByTab.entries()].map(([k, v]) => [String(k), v])
+    );
     await chrome.storage.local.set({ lastActivityByTab: obj });
   } catch (e) {
     console.warn('[TabHibernate] persistLastActivity failed', e);
   }
 }
 
-function getExtensionOrigin() {
-  return chrome.runtime.getURL('').replace(/\/$/, '');
-}
-
 function isSuspendedPlaceholderUrl(url) {
-  const origin = getExtensionOrigin();
-  return url && url.startsWith(origin) && url.includes('suspended.html');
+  const base = chrome.runtime.getURL('suspended.html');
+  return url && url.startsWith(base.split('?')[0]);
 }
 
 /**
@@ -118,13 +117,12 @@ async function suspendPlaceholder(tabId, url, title) {
   } catch (e) {
     return false;
   }
-  const origin = getExtensionOrigin();
   const restoreKey = `suspended_${tabId}`;
   await chrome.storage.local.set({
     [restoreKey]: { url: url || '', title: title || '', tabId },
   });
   const params = new URLSearchParams({ tabId: String(tabId) });
-  const suspendedUrl = `${origin}${SUSPENDED_PAGE_PATH}?${params.toString()}`;
+  const suspendedUrl = chrome.runtime.getURL('suspended.html') + '?' + params.toString();
   try {
     await chrome.tabs.update(tabId, { url: suspendedUrl });
     await incrementSuspendedToday();
@@ -373,7 +371,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     settings: {
       enabled: true,
       timeoutMinutes: INACTIVITY_MINUTES,
-      mode: 'discard',
+      mode: 'placeholder',
     },
   });
   await initOnStartup();
