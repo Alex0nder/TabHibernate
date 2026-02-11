@@ -14,6 +14,7 @@ const el = {
   closeAndSave: document.getElementById('closeAndSave'),
   openHistory: document.getElementById('openHistory'),
   stats: document.getElementById('stats'),
+  statsNumber: document.getElementById('statsNumber'),
   statusLine: document.getElementById('statusLine'),
 };
 
@@ -65,8 +66,9 @@ function formatLastCheck(ts) {
 async function refreshStats() {
   try {
     const res = await sendMessageWithRetry({ type: 'getStatus' });
-    if (res && typeof res.suspendedToday === 'number') {
-      el.stats.textContent = `Suspended today: ${res.suspendedToday}`;
+    if (res && el.statsNumber) {
+      const n = typeof res.hibernatedCount === 'number' ? res.hibernatedCount : null;
+      el.statsNumber.textContent = n !== null ? String(n) : '—';
     }
     if (res && el.statusLine) {
       const lastRun = res.lastAlarmRun || 0;
@@ -77,10 +79,15 @@ async function refreshStats() {
       }
     }
   } catch (e) {
-    el.stats.textContent = 'Suspended today: —';
+    if (el.statsNumber) el.statsNumber.textContent = '—';
     if (el.statusLine) el.statusLine.textContent = 'No connection to extension. Open popup again.';
   }
 }
+
+/** Обновлять счётчик при изменении closedAndSaved (очистка истории, импорт и т.д.). */
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.closedAndSaved) refreshStats();
+});
 
 el.enabled.addEventListener('change', saveSettings);
 el.timeout.addEventListener('change', saveSettings);

@@ -5,14 +5,17 @@
   <title>Tab Hibernate</title>
   <link rel="stylesheet" href="theme.css">
   <style>
+    /* Боковая панель: без фиксированной ширины, контент тянется по ширине панели браузера. */
     body {
-      width: 300px;
+      min-width: 280px;
+      max-width: 100%;
       padding: 16px;
       margin: 0;
       font-family: 'SF Pro Text', system-ui, -apple-system, sans-serif;
       font-size: 13px;
       background: var(--th-bg-base);
       color: var(--th-text-primary);
+      box-sizing: border-box;
     }
     h2 {
       margin: 0 0 16px;

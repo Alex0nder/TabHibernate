@@ -17,6 +17,7 @@
       background: var(--th-bg-base);
       background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(107, 155, 181, 0.06), transparent);
       color: var(--th-text-primary);
+      cursor: pointer;
     }
     .card {
       background: var(--th-bg-card);
@@ -48,8 +49,42 @@
     .lead {
       font-size: 14px;
       color: var(--th-text-secondary);
-      margin: 0 0 24px;
+      margin: 0 0 20px;
       line-height: 1.5;
+    }
+    .page-preview {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      background: var(--th-bg-elevated);
+      border: 1px solid var(--th-border);
+      border-radius: var(--th-radius);
+      text-align: left;
+    }
+    .page-favicon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 4px;
+    }
+    .page-favicon[hidden] {
+      display: none;
+    }
+    .page-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--th-text-primary);
+      line-height: 1.35;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .page-title:empty::before {
+      content: '—';
+      color: var(--th-text-muted);
     }
     .url-block {
       background: var(--th-bg-elevated);
@@ -110,12 +145,16 @@
     <div class="badge">Tab Hibernate</div>
     <h1>Tab suspended</h1>
     <p class="lead">Tab Hibernate suspended this tab to reduce memory usage. The original page is not loaded.</p>
+    <div class="page-preview" id="pagePreview">
+      <img class="page-favicon" id="pageFavicon" alt="" width="24" height="24" hidden>
+      <div class="page-title" id="pageTitle"></div>
+    </div>
     <div class="url-block">
       <div class="url-label">Page URL</div>
       <div class="url" id="url">—</div>
     </div>
     <button id="reload">Restore tab</button>
-    <p class="note">Click “Restore tab” to open the page again.</p>
+    <p class="note">Click “Restore tab” or anywhere on the page to open the page again.</p>
   </div>
   <script src="suspended.js"></script>
 </body>

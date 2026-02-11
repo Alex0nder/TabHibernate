@@ -1,8 +1,7 @@
 /**
  * History page: list closedAndSaved + backup_* from storage, export to JSON file, import from file, open selected as tabs.
+ * Лимит closedSavedMax запрашивается у service worker (единый источник — service_worker.js).
  */
-
-const CLOSED_SAVED_MAX = 2000;
 
 async function loadAll() {
   const raw = await chrome.storage.local.get(null);
@@ -14,19 +13,27 @@ async function loadAll() {
   return { closedAndSaved, backups };
 }
 
+/** Рендер списка «Closed and saved» + показ/скрытие строки «Выбрать все» и привязка логики */
 function renderClosed(listEl, items) {
+  const selectAllRow = document.getElementById('selectAllRow');
+  const selectAllCb = document.getElementById('selectAllClosed');
   listEl.innerHTML = '';
   if (!items.length) {
     listEl.innerHTML = '<li class="empty">No closed-and-saved tabs.</li>';
+    if (selectAllRow) selectAllRow.style.display = 'none';
     return;
   }
+  if (selectAllRow) selectAllRow.style.display = 'flex';
   for (const item of items) {
     const li = document.createElement('li');
     li.dataset.url = item.url || '';
     const date = item.savedAt ? new Date(item.savedAt).toLocaleString() : '—';
     li.innerHTML = `
-      <input type="checkbox" class="cb-closed" data-url="${escapeAttr(item.url)}">
-      <div>
+      <span class="checkbox-wrap">
+        <input type="checkbox" class="cb-closed" data-url="${escapeAttr(item.url)}">
+        <span class="checkbox-box" aria-hidden="true"></span>
+      </span>
+      <div class="item-content">
         <div class="item-title" title="${escapeAttr(item.title || item.url)}">${escapeHtml(item.title || item.url || '—')}</div>
         <div class="item-url" title="${escapeAttr(item.url)}">${escapeHtml(item.url || '')}</div>
       </div>
@@ -34,6 +41,31 @@ function renderClosed(listEl, items) {
     `;
     listEl.appendChild(li);
   }
+  bindSelectAll(listEl, selectAllCb);
+}
+
+/** Связка чекбокса «Выбрать все» с чекбоксами строк: один клик выделяет/снимает все; при изменении строк обновляем состояние */
+function bindSelectAll(listEl, selectAllCb) {
+  if (!selectAllCb) return;
+  const checkboxes = () => listEl.querySelectorAll('.cb-closed');
+  const updateSelectAllState = () => {
+    const cbs = checkboxes();
+    const n = cbs.length;
+    const checked = Array.from(cbs).filter((cb) => cb.checked).length;
+    selectAllCb.checked = n > 0 && checked === n;
+    selectAllCb.indeterminate = checked > 0 && checked < n;
+  };
+  selectAllCb.checked = false;
+  selectAllCb.indeterminate = false;
+  selectAllCb.removeEventListener('change', window.__selectAllHandler);
+  window.__selectAllHandler = () => {
+    const checked = selectAllCb.checked;
+    checkboxes().forEach((cb) => { cb.checked = checked; });
+  };
+  selectAllCb.addEventListener('change', window.__selectAllHandler);
+  listEl.addEventListener('change', (e) => {
+    if (e.target.classList.contains('cb-closed')) updateSelectAllState();
+  });
 }
 
 function renderBackups(listEl, backups) {
@@ -47,8 +79,11 @@ function renderBackups(listEl, backups) {
     const items = backups[date];
     const li = document.createElement('li');
     li.innerHTML = `
-      <input type="checkbox" class="cb-backup" data-date="${escapeAttr(date)}">
-      <div>
+      <span class="checkbox-wrap">
+        <input type="checkbox" class="cb-backup" data-date="${escapeAttr(date)}">
+        <span class="checkbox-box" aria-hidden="true"></span>
+      </span>
+      <div class="item-content">
         <div class="item-title">${escapeHtml(date)}</div>
         <div class="item-url">${items.length} tab(s)</div>
       </div>
@@ -103,6 +138,20 @@ async function openSelected() {
   }
 }
 
+/** Открыть все страницы из «Closed and saved» в новых вкладках; после открытия — очистить историю. */
+async function openAll() {
+  const items = window.__backupsCache?.closedAndSaved;
+  if (!Array.isArray(items) || !items.length) return alert('No closed-and-saved tabs.');
+  const urls = items.map((x) => x.url).filter(Boolean);
+  if (!urls.length) return alert('No URLs to open.');
+  for (const url of urls) {
+    try { await chrome.tabs.create({ url }); } catch (e) { console.warn(e); }
+  }
+  await chrome.storage.local.set({ closedAndSaved: [] });
+  if (window.__backupsCache) window.__backupsCache.closedAndSaved = [];
+  await refresh();
+}
+
 function exportData() {
   const data = {
     closedAndSaved: window.__backupsCache?.closedAndSaved ?? [],
@@ -132,7 +181,8 @@ async function importData(file) {
     return;
   }
   const existing = await loadAll();
-  const closedAndSaved = [...(Array.isArray(data.closedAndSaved) ? data.closedAndSaved : []), ...existing.closedAndSaved].slice(0, CLOSED_SAVED_MAX);
+  const maxClosed = window.__closedSavedMax ?? 2000;
+  const closedAndSaved = [...(Array.isArray(data.closedAndSaved) ? data.closedAndSaved : []), ...existing.closedAndSaved].slice(0, maxClosed);
   const backups = { ...existing.backups };
   if (data.backups && typeof data.backups === 'object') {
     for (const [date, list] of Object.entries(data.backups)) {
@@ -157,7 +207,19 @@ async function importData(file) {
   alert('Import done.');
 }
 
-function init() {
+async function init() {
+  try {
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'getConstants' }, resolve);
+    });
+    if (res && typeof res.closedSavedMax === 'number') {
+      window.__closedSavedMax = res.closedSavedMax;
+    } else {
+      window.__closedSavedMax = 2000;
+    }
+  } catch (e) {
+    window.__closedSavedMax = 2000;
+  }
   document.getElementById('exportBtn').addEventListener('click', () => exportData());
   document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
   document.getElementById('importFile').addEventListener('change', (e) => {
@@ -166,6 +228,7 @@ function init() {
     e.target.value = '';
   });
   document.getElementById('openSelected').addEventListener('click', openSelected);
+  document.getElementById('openAllBtn').addEventListener('click', openAll);
   refresh();
   setInterval(refresh, 3000);
 }

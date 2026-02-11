@@ -7,6 +7,8 @@
 const ALARM_CHECK_NAME = 'tabHibernateCheck';
 const ALARM_CHECK_PERIOD_MINUTES = 1;
 const INACTIVITY_MINUTES = 5;
+/** Хранить бэкапы по датам только за последние N дней; старые удалять. */
+const BACKUP_RETENTION_DAYS = 30;
 
 // ——— Хранение последней активности по tabId (в памяти + синхронизация при сообщениях)
 // После сна SW память пуста — восстанавливаем из storage в начале onAlarmCheck.
@@ -92,12 +94,69 @@ async function getSettings() {
   };
 }
 
-/** Обновляем счётчик "приостановлено сегодня" (по календарной дате). */
+/** Обновляем счётчик "приостановлено сегодня"; бейдж обновляется по числу текущих заглушек. */
 async function incrementSuspendedToday() {
   const today = new Date().toISOString().slice(0, 10);
   const { suspendedToday = 0, suspendedTodayDate } = await chrome.storage.local.get(['suspendedToday', 'suspendedTodayDate']);
   const count = suspendedTodayDate === today ? suspendedToday + 1 : 1;
   await chrome.storage.local.set({ suspendedToday: count, suspendedTodayDate: today });
+  await updateBadge();
+}
+
+/** Число вкладок, которые сейчас показывают заглушку (suspended.html). */
+async function getCurrentlySuspendedTabCount() {
+  const tabs = await chrome.tabs.query({});
+  return tabs.filter((tab) => tab.url && isPlaceholderTabUrl(tab.url)).length;
+}
+
+/** Число «в гибернации»: вкладки в заглушке + записи в истории «Closed and saved». Для бейджа и popup. */
+async function getHibernatedCount() {
+  const [tabs, raw] = await Promise.all([
+    chrome.tabs.query({}),
+    chrome.storage.local.get('closedAndSaved'),
+  ]);
+  const placeholderCount = tabs.filter((tab) => tab.url && isPlaceholderTabUrl(tab.url)).length;
+  const closedSaved = Array.isArray(raw.closedAndSaved) ? raw.closedAndSaved : [];
+  return placeholderCount + closedSaved.length;
+}
+
+/** Бейдж на иконке: число в гибернации (заглушки + closed and saved). */
+async function updateBadge(count) {
+  try {
+    const n = typeof count === 'number' ? count : await getHibernatedCount();
+    await chrome.action.setBadgeText({ text: n > 0 ? String(n) : '' });
+    if (n > 0) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#0d9488' });
+    }
+  } catch (e) {
+    console.warn('[TabHibernate] updateBadge failed', e);
+  }
+}
+
+async function getSuspendedTodayCount() {
+  const today = new Date().toISOString().slice(0, 10);
+  const { suspendedToday = 0, suspendedTodayDate } = await chrome.storage.local.get(['suspendedToday', 'suspendedTodayDate']);
+  return suspendedTodayDate === today ? suspendedToday : 0;
+}
+
+/** Удалить из storage ключи backup_YYYY-MM-DD старше BACKUP_RETENTION_DAYS дней. */
+async function pruneOldBackups() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - BACKUP_RETENTION_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    for (const key of Object.keys(all)) {
+      if (!key.startsWith('backup_')) continue;
+      const dateStr = key.slice(7);
+      if (dateStr.length === 10 && dateStr < cutoffStr) {
+        await chrome.storage.local.remove(key);
+      }
+    }
+  } catch (e) {
+    console.warn('[TabHibernate] pruneOldBackups failed', e);
+  }
 }
 
 /** Единая точка: пометить таб как активный по действию пользователя. */
@@ -374,6 +433,7 @@ async function runRestoreAllSuspended() {
       console.warn('[TabHibernate] restore tab failed', tab.id, e);
     }
   }
+  await updateBadge();
   return { restored };
 }
 
@@ -385,6 +445,7 @@ async function onAlarmCheck() {
 
     await getStoredState();
     await pruneStaleTabIds();
+    await pruneOldBackups();
 
     const settings = await getSettings();
     if (!settings.enabled) return;
@@ -471,9 +532,22 @@ async function initOnStartup() {
     }
   }
   await persistLastActivity();
+  await updateBadge();
 }
 
-chrome.runtime.onStartup.addListener(initOnStartup);
+/** Клик по иконке расширения открывает боковую панель вместо popup. */
+async function setSidePanelBehavior() {
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (e) {
+    console.warn('[TabHibernate] setPanelBehavior failed', e);
+  }
+}
+
+chrome.runtime.onStartup.addListener(async () => {
+  await setSidePanelBehavior();
+  await initOnStartup();
+});
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.set({
     settings: {
@@ -482,6 +556,7 @@ chrome.runtime.onInstalled.addListener(async () => {
       mode: 'placeholder',
     },
   });
+  await setSidePanelBehavior();
   await initOnStartup();
 });
 
@@ -508,6 +583,17 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   lastActivityByTab.delete(tabId);
   persistLastActivity();
   chrome.storage.local.remove(`suspended_${tabId}`);
+  updateBadge();
+});
+
+/** Бейдж обновляется при изменении closedAndSaved (импорт/очистка на странице History). */
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.closedAndSaved) updateBadge();
+});
+
+/** При смене URL вкладки (в т.ч. restore одной вкладки) обновляем бейдж. */
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url) updateBadge();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -557,18 +643,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     Promise.all([
       chrome.storage.local.get(['suspendedToday', 'suspendedTodayDate', 'lastAlarmRun']),
       getEligibleTabsForBackup(),
-    ]).then(([data, eligibleTabs]) => {
+      getHibernatedCount(),
+    ]).then(async ([data, eligibleTabs, hibernatedCount]) => {
       const today = new Date().toISOString().slice(0, 10);
       const suspendedToday = data.suspendedTodayDate === today ? (data.suspendedToday || 0) : 0;
+      await updateBadge(hibernatedCount);
       safeSend({
         suspendedToday,
+        hibernatedCount,
         lastAlarmRun: data.lastAlarmRun || 0,
         eligibleTabCount: eligibleTabs.length,
+        closedSavedMax: CLOSED_SAVED_MAX,
       });
     }).catch((e) => {
       console.warn('[TabHibernate] getStatus failed', e);
-      safeSend({ suspendedToday: 0, lastAlarmRun: 0, eligibleTabCount: 0 });
+      safeSend({ suspendedToday: 0, hibernatedCount: 0, lastAlarmRun: 0, eligibleTabCount: 0, closedSavedMax: CLOSED_SAVED_MAX });
     });
+    return true;
+  }
+  if (msg.type === 'getConstants') {
+    safeSend({ closedSavedMax: CLOSED_SAVED_MAX });
     return true;
   }
   if (msg.type === 'clearRestoreData') {
@@ -616,7 +710,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'closeAndSaveAll') {
-    runCloseAndSaveAll().then((res) => safeSend(res)).catch((e) => {
+    runCloseAndSaveAll().then(async (res) => {
+      await updateBadge();
+      safeSend(res);
+    }).catch((e) => {
       console.warn('[TabHibernate] closeAndSaveAll failed', e);
       safeSend({ closed: 0, error: String(e.message) });
     });
