@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Hibernate",
+  "version": "1.0.0",
+  "description": "Reduces memory by suspending inactive tabs; backs up tab URLs to bookmarks and local storage.",
+  "permissions": [
+    "tabs",
+    "alarms",
+    "storage",
+    "bookmarks",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "chrome://*/*",
+        "chrome-extension://*/*"
+      ],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
