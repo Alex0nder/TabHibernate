@@ -1,42 +1,59 @@
 # Tab Hibernate
 
-**Chrome extension (Manifest V3)** that reduces memory usage by automatically suspending inactive tabs after a timeout (5–15 min), saving their URLs to bookmarks and local storage. Two modes: **Discard** (unload tab) and **Placeholder** (stub page with “Restore” button). Manual “Suspend all tabs” and “Backup tabs now” are available.
+Chrome-расширение (Manifest V3), которое снижает потребление памяти: приостанавливает неактивные вкладки по таймауту или вручную, сохраняет URL в закладки и локальное хранилище. Интерфейс открывается в **боковой панели** (Side Panel) по клику на иконку.
 
-- Repository: [github.com/Alex0nder/TabHibernate](https://github.com/Alex0nder/TabHibernate)
+- **Репозиторий:** [github.com/Alex0nder/TabHibernate](https://github.com/Alex0nder/TabHibernate)
 
-**Requirements:** Chrome with Manifest V3 support (Chrome 88+).
+**Требования:** Chrome 88+ с поддержкой Manifest V3 и Side Panel (рекомендуется Chrome 114+).
 
-## Installation
+---
 
-1. Clone the repo or download the archive.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and select the project folder.
+## Установка
 
-## Features
+1. Клонируйте репозиторий или скачайте архив.
+2. Откройте `chrome://extensions`.
+3. Включите **Режим разработчика**.
+4. Нажмите **Загрузить распакованное расширение** и выберите папку проекта.
 
-- **Inactivity timeout:** a tab is considered inactive after no interaction for 5 min (configurable in popup: 5 / 10 / 15 min).
-- **Two suspension modes:**
-  - **Discard** — `chrome.tabs.discard(tabId)` (tab is unloaded; clicking reloads it).
-  - **Placeholder** — redirect to extension stub page with a “Restore” button for the original URL.
-- **Backup:** on suspend and via “Backup tabs now” — bookmarks in **Tab Backup / YYYY-MM-DD** and JSON in `chrome.storage.local`.
-- **Manual suspend:** “Suspend all tabs” button in the popup.
-- **Exclusions:** active tab, pinned, audible, `chrome://`, `chrome-extension://`, and incognito tabs are not suspended.
+---
 
-## Limitations
+## Возможности
 
-- When a tab is suspended (discard or placeholder), the page is unloaded. **Unsaved form data and SPA state may be lost** — use save/autosave on important pages.
+- **Таймаут неактивности** — вкладка считается неактивной при отсутствии действий 5–60 минут (настраивается в панели).
+- **Два режима приостановки:**
+  - **Discard** — выгрузка вкладки через Chrome API; повторное открытие по клику.
+  - **Placeholder** — переход на страницу-заглушку расширения с кнопкой **Restore** для восстановления исходного URL.
+- **Бэкап:** при приостановке и по кнопке — закладки в папке **Tab Backup / дата** и данные в `chrome.storage.local`.
+- **Ручные действия:** приостановить текущую вкладку, приостановить все, восстановить все, закрыть все и сохранить в историю.
+- **История (History):** список «Closed and saved», экспорт/импорт JSON, открыть выбранные или все вкладки; после «Open all» история очищается.
+- **Счётчик на иконке** — число вкладок в заглушке плюс записей в истории (свернуто/сохранено).
+- **Исключения:** активная вкладка, закреплённые, со звуком, `chrome://`, `chrome-extension://` и инкогнито не приостанавливаются.
 
-## Structure
+---
 
-- `manifest.json` — MV3, permissions, background, content_script.
-- `service_worker.js` — alarm timer, activity tracking, suspend and backup logic.
-- `content_script.js` — reports activity (mousemove, keydown, scroll) to the service worker.
-- `popup.html` / `popup.js` — settings, backup, suspend-all, stats.
-- `theme.css` — dark minimal theme.
-- `suspended.html` / `suspended.js` — Placeholder stub page with “Restore” button.
-- `DEVELOPMENT.md` — roadmap and stability notes.
+## Ограничения
 
-## License
+При приостановке (discard или placeholder) страница выгружается. **Несохранённые формы и состояние SPA могут быть потеряны** — сохраняйте важные данные заранее.
+
+---
+
+## Структура проекта
+
+| Файл | Назначение |
+|------|------------|
+| `manifest.json` | MV3, права, Side Panel, content script |
+| `service_worker.js` | Таймер, учёт активности, приостановка, бэкап, бейдж |
+| `content_script.js` | Отправка активности (мышь, клавиатура, скролл) в service worker |
+| `side_panel.html` / `popup.js` | Панель настроек, кнопки, счётчик |
+| `popup.html` | Резервный popup (логика общая с side panel) |
+| `history.html` / `history.js` | Страница истории: экспорт/импорт, список, открытие вкладок |
+| `suspended.html` / `suspended.js` | Страница-заглушка с кнопкой Restore |
+| `theme.css` | Тёмная тема |
+| `icons/` | Иконки (галочка, стрелка селекта) |
+| `DEVELOPMENT.md` | Дорожная карта и заметки по разработке |
+
+---
+
+## Лицензия
 
 MIT.

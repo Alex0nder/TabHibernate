@@ -149,17 +149,15 @@
     .checkbox-wrap .checkbox-box::after {
       content: '';
       position: absolute;
-      left: 5px;
-      top: 2px;
-      width: 5px;
-      height: 9px;
-      border: solid #0c0e12;
-      border-width: 0 2px 2px 0;
-      transform: rotate(45deg) scale(0);
-      transition: transform 0.15s;
+      inset: 2px;
+      -webkit-mask: url('icons/check.svg') center/contain no-repeat;
+      mask: url('icons/check.svg') center/contain no-repeat;
+      background: #0c0e12;
+      opacity: 0;
+      transition: opacity 0.15s;
     }
     .checkbox-wrap input:checked + .checkbox-box::after {
-      transform: rotate(45deg) scale(1);
+      opacity: 1;
     }
     .checkbox-wrap input:indeterminate + .checkbox-box {
       border-color: var(--th-accent-cyan);

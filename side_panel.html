@@ -5,18 +5,20 @@
   <title>Tab Hibernate</title>
   <link rel="stylesheet" href="theme.css">
   <style>
-    /* Боковая панель: без фиксированной ширины, контент тянется по ширине панели браузера. */
+    /* Боковая панель: flex, контент сверху, About прижат к низу. */
+    html, body { height: 100%; margin: 0; box-sizing: border-box; }
     body {
       min-width: 280px;
       max-width: 100%;
       padding: 16px;
-      margin: 0;
+      display: flex;
+      flex-direction: column;
       font-family: 'SF Pro Text', system-ui, -apple-system, sans-serif;
       font-size: 13px;
       background: var(--th-bg-base);
       color: var(--th-text-primary);
-      box-sizing: border-box;
     }
+    .panel-main { flex: 1; min-height: 0; }
     h2 {
       margin: 0 0 16px;
       font-size: 17px;
@@ -37,19 +39,19 @@
     }
     select {
       padding: 6px 28px 6px 10px;
-      background: var(--th-bg-input);
-      border: 1px solid var(--th-border);
+      background: var(--th-bg-input) url('icons/chevron-down.svg') right 8px center / 18px 18px no-repeat;
+      border: none;
       border-radius: var(--th-radius);
       color: var(--th-text-primary);
       font-size: 13px;
       min-width: 80px;
       max-width: 140px;
       width: auto;
-    }
-    select:focus {
       outline: none;
-      border-color: var(--th-accent-cyan);
+      -webkit-appearance: none;
+      appearance: none;
     }
+    select:focus { outline: none; }
     option {
       background: var(--th-bg-elevated);
       color: var(--th-text-primary);
@@ -71,23 +73,17 @@
       cursor: pointer;
       transition: background 0.15s;
       width: 100%;
+      outline: none;
     }
-    button:hover {
-      background: var(--th-btn-primary-hover);
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    button:hover { background: var(--th-btn-primary-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.btn-secondary {
       background: var(--th-bg-elevated);
       color: var(--th-accent-cyan);
-      border: 1px solid var(--th-border);
+      border: none;
+      outline: none;
     }
-    button.btn-secondary:hover {
-      background: var(--th-bg-card);
-      border-color: var(--th-accent-cyan);
-    }
+    button.btn-secondary:hover { background: var(--th-bg-card); }
     .stats {
       margin-top: 10px;
       font-size: 12px;
@@ -120,9 +116,10 @@
       line-height: 1.4;
     }
     .about {
-      margin-top: 14px;
+      margin-top: auto;
       padding-top: 12px;
-      border-top: 1px solid var(--th-border);
+      border-top: 1px solid rgba(45, 51, 59, 0.5);
+      flex-shrink: 0;
     }
     .about-title {
       font-size: 11px;
@@ -149,6 +146,7 @@
   </style>
 </head>
 <body>
+  <div class="panel-main">
   <h2>Tab Hibernate</h2>
   <div class="row">
     <label for="enabled">Enable</label>
@@ -196,6 +194,7 @@
   <div class="stats" id="stats">Suspended / saved: <span class="stats-number" id="statsNumber">—</span></div>
   <div class="stats" id="statusLine">—</div>
   <div class="hint" id="hint">Only background tabs are suspended (not the active or pinned one).</div>
+  </div>
   <div class="about">
     <p class="about-title">About</p>
     <p class="about-text">Suspends background tabs after the selected timeout (5–60 min) or on demand, saves URLs to bookmarks (Tab Backup / date) and local storage. Placeholder mode shows a stub with a Restore button.</p>
