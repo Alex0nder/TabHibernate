@@ -1,59 +1,59 @@
 # Tab Hibernate
 
-Chrome-расширение (Manifest V3), которое снижает потребление памяти: приостанавливает неактивные вкладки по таймауту или вручную, сохраняет URL в закладки и локальное хранилище. Интерфейс открывается в **боковой панели** (Side Panel) по клику на иконку.
+Chrome extension (Manifest V3) that reduces memory usage by suspending inactive tabs after a timeout or on demand, and saves URLs to bookmarks and local storage. The UI opens in the **Side Panel** when you click the extension icon.
 
-- **Репозиторий:** [github.com/Alex0nder/TabHibernate](https://github.com/Alex0nder/TabHibernate)
+- **Repository:** [github.com/Alex0nder/TabHibernate](https://github.com/Alex0nder/TabHibernate)
 
-**Требования:** Chrome 88+ с поддержкой Manifest V3 и Side Panel (рекомендуется Chrome 114+).
-
----
-
-## Установка
-
-1. Клонируйте репозиторий или скачайте архив.
-2. Откройте `chrome://extensions`.
-3. Включите **Режим разработчика**.
-4. Нажмите **Загрузить распакованное расширение** и выберите папку проекта.
+**Requirements:** Chrome 88+ with Manifest V3 support; Chrome 114+ recommended for Side Panel.
 
 ---
 
-## Возможности
+## Installation
 
-- **Таймаут неактивности** — вкладка считается неактивной при отсутствии действий 5–60 минут (настраивается в панели).
-- **Два режима приостановки:**
-  - **Discard** — выгрузка вкладки через Chrome API; повторное открытие по клику.
-  - **Placeholder** — переход на страницу-заглушку расширения с кнопкой **Restore** для восстановления исходного URL.
-- **Бэкап:** при приостановке и по кнопке — закладки в папке **Tab Backup / дата** и данные в `chrome.storage.local`.
-- **Ручные действия:** приостановить текущую вкладку, приостановить все, восстановить все, закрыть все и сохранить в историю.
-- **История (History):** список «Closed and saved», экспорт/импорт JSON, открыть выбранные или все вкладки; после «Open all» история очищается.
-- **Счётчик на иконке** — число вкладок в заглушке плюс записей в истории (свернуто/сохранено).
-- **Исключения:** активная вкладка, закреплённые, со звуком, `chrome://`, `chrome-extension://` и инкогнито не приостанавливаются.
+1. Clone the repo or download the archive.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select the project folder.
 
 ---
 
-## Ограничения
+## Features
 
-При приостановке (discard или placeholder) страница выгружается. **Несохранённые формы и состояние SPA могут быть потеряны** — сохраняйте важные данные заранее.
-
----
-
-## Структура проекта
-
-| Файл | Назначение |
-|------|------------|
-| `manifest.json` | MV3, права, Side Panel, content script |
-| `service_worker.js` | Таймер, учёт активности, приостановка, бэкап, бейдж |
-| `content_script.js` | Отправка активности (мышь, клавиатура, скролл) в service worker |
-| `side_panel.html` / `popup.js` | Панель настроек, кнопки, счётчик |
-| `popup.html` | Резервный popup (логика общая с side panel) |
-| `history.html` / `history.js` | Страница истории: экспорт/импорт, список, открытие вкладок |
-| `suspended.html` / `suspended.js` | Страница-заглушка с кнопкой Restore |
-| `theme.css` | Тёмная тема |
-| `icons/` | Иконки (галочка, стрелка селекта) |
-| `DEVELOPMENT.md` | Дорожная карта и заметки по разработке |
+- **Inactivity timeout** — a tab is considered inactive after 5–60 minutes without interaction (configurable in the panel).
+- **Two suspension modes:**
+  - **Discard** — unloads the tab via Chrome API; reload on click.
+  - **Placeholder** — redirects to the extension stub page with a **Restore** button to bring back the original URL.
+- **Backup:** on suspend and via button — bookmarks in **Tab Backup / date** folder and data in `chrome.storage.local`.
+- **Manual actions:** suspend current tab, suspend all, restore all, close all and save to history.
+- **History:** “Closed and saved” list, export/import JSON, open selected or all tabs; history is cleared after “Open all”.
+- **Badge on icon** — count of placeholder tabs plus history entries (suspended/saved).
+- **Exclusions:** active tab, pinned, audible, `chrome://`, `chrome-extension://`, and incognito tabs are not suspended.
 
 ---
 
-## Лицензия
+## Limitations
+
+When a tab is suspended (discard or placeholder), the page is unloaded. **Unsaved form data and SPA state may be lost** — save important data beforehand.
+
+---
+
+## Project structure
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | MV3, permissions, Side Panel, content script |
+| `service_worker.js` | Timer, activity tracking, suspend, backup, badge |
+| `content_script.js` | Sends activity (mouse, keyboard, scroll) to the service worker |
+| `side_panel.html` / `popup.js` | Settings panel, buttons, counter |
+| `popup.html` | Fallback popup (shared logic with side panel) |
+| `history.html` / `history.js` | History page: export/import, list, open tabs |
+| `suspended.html` / `suspended.js` | Stub page with Restore button |
+| `theme.css` | Dark theme |
+| `icons/` | Icons (check, select arrow) |
+| `DEVELOPMENT.md` | Roadmap and development notes |
+
+---
+
+## License
 
 MIT.
